@@ -1,0 +1,17 @@
+{
+  "name": "addy-agent-skills",
+  "owner": {
+    "name": "mohammedfaheem5150-jpg"
+  },
+  "metadata": {
+    "description": "Marketplace for agent skills that help maintain and contribute to awesome-go",
+    "version": "1.0.0"
+  },
+  "plugins": [
+    {
+      "name": "agent-skills",
+      "source": "./plugins/agent-skills",
+      "description": "Skills and commands for reviewing and quality-checking awesome-go entries"
+    }
+  ]
+}
