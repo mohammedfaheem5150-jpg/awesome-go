@@ -1,0 +1,28 @@
+# Incident report tracker configuration.
+#
+# If you already run the AGL tracker suite from one folder, MERGE the
+# `incident:` section below into your existing config.yaml - run_incident.py
+# reads config.yaml first and falls back to this file.
+
+incident:
+  inbox_folder: incident_inbox            # --manual mode: drop report PDFs here
+  tracker_file: DAMAGED_FITTING_TRACKER.xlsx
+  ledger_file: incident_processed.json
+  log_file: logs/incident.log
+
+  outlook:
+    enabled: true
+    mailbox: ""                           # blank = default Outlook account
+    folder: Inbox
+    subject_contains: ["incident"]        # any-of, case-insensitive
+    lookback_days: 30
+    attachment_ext: .pdf
+
+  review:
+    require_preparer_signature: true      # flag reports missing the signature image
+    require_submitted_signature: false    # ADA engineer usually signs later
+    flag_location_mismatch: true          # 'Location' vs 'Area of Incident'
+    require_annex_photos: true
+    max_report_date_drift_days: 1
+    stand_series: [100, 800]              # AUH stand numbering
+    expected_prepared_by: ""              # e.g. your name; blank = don't check

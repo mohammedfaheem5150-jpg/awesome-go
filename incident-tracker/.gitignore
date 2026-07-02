@@ -1,0 +1,6 @@
+incident_inbox/
+logs/
+incident_processed.json
+*.xlsx
+__pycache__/
+*.pyc
