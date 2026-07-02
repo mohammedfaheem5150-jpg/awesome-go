@@ -14,7 +14,12 @@ incident:
     enabled: true
     mailbox: ""                           # blank = default Outlook account
     folder: Inbox
-    subject_contains: ["incident"]        # any-of, case-insensitive
+    # a mail is picked up when its subject contains any of these ...
+    subject_contains: ["incident", "damaged"]
+    # ... or when a PDF attachment name contains any of these; attachments
+    # matching the report filename convention (20251107_01_..._WO_NNN.pdf)
+    # are picked up regardless of subject.
+    attachment_name_contains: ["incident", "damaged"]
     lookback_days: 30
     attachment_ext: .pdf
 

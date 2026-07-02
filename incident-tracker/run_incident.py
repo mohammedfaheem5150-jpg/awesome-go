@@ -42,7 +42,11 @@ DEFAULTS = {
         "enabled": True,
         "mailbox": "",                 # default account when blank
         "folder": "Inbox",
-        "subject_contains": ["incident"],   # any-of, case-insensitive
+        # a mail is picked up when its SUBJECT contains any of these ...
+        "subject_contains": ["incident", "damaged"],
+        # ... or when a PDF attachment NAME contains any of these / matches
+        # the report filename convention (20251107_01_..._WO_43233460_02.pdf)
+        "attachment_name_contains": ["incident", "damaged"],
         "lookback_days": 30,
         "attachment_ext": ".pdf",
     },
@@ -123,23 +127,27 @@ def fetch_from_outlook(cfg, inbox_dir, log):
     items = folder.Items
     items.Sort("[ReceivedTime]", True)
     items = items.Restrict("[ReceivedTime] >= '%s'" % since.strftime("%m/%d/%Y %H:%M %p"))
-    needles = [s.lower() for s in ocfg.get("subject_contains", [])]
+    from incident_parse import FILENAME_RE
+    subj_needles = [s.lower() for s in ocfg.get("subject_contains", [])]
+    name_needles = [s.lower() for s in ocfg.get("attachment_name_contains", [])]
     saved = []
     for item in items:
         try:
             subject = (item.Subject or "").lower()
-        except Exception:
-            continue
-        if needles and not any(n in subject for n in needles):
-            continue
-        try:
             attachments = item.Attachments
         except Exception:
             continue
+        subject_hit = any(n in subject for n in subj_needles)
         for i in range(1, attachments.Count + 1):
             att = attachments.Item(i)
             name = str(att.FileName or "")
             if not name.lower().endswith(ocfg.get("attachment_ext", ".pdf")):
+                continue
+            # save when the mail subject matches, OR the attachment itself
+            # looks like an incident report (keyword or filename convention)
+            name_hit = (any(n in name.lower() for n in name_needles)
+                        or bool(FILENAME_RE.search(name)))
+            if not (subject_hit or name_hit):
                 continue
             dest = os.path.join(inbox_dir, name)
             if not os.path.exists(dest):
