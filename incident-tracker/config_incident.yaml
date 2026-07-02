@@ -6,9 +6,13 @@
 
 incident:
   inbox_folder: incident_inbox            # --manual mode: drop report PDFs here
+  # point this at HD's real workbook to update it in place, e.g.
+  # DAMAGE_FITTING_LIST_20242025.xlsx (its own header layout is preserved;
+  # missing WO NUMBER / REPORT ID / IR NO / IR STATUS columns are appended)
   tracker_file: DAMAGED_FITTING_TRACKER.xlsx
   ledger_file: incident_processed.json
   log_file: logs/incident.log
+  annex_recent_months: 6                  # IR ANNEX sheets kept (0 = all months)
 
   outlook:
     enabled: true

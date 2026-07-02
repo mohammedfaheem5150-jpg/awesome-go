@@ -11,6 +11,7 @@ column layout is preserved.  Sheets rebuilt on every run:
 * ``SUMMARY``              - per-month counts and IR status.
 """
 
+import copy
 import datetime
 import os
 import re
@@ -25,14 +26,21 @@ QA_SHEET = "QA REVIEW"
 SUMMARY_SHEET = "SUMMARY"
 ANNEX_PREFIX = "IR ANNEX"
 
-# canonical field -> header aliases (lowercased, punctuation stripped)
+# canonical field -> header aliases (lowercased, punctuation stripped).
+# Covers both our default layout and HD's real DAMAGE_FITTING_LIST
+# (SL NO. | Date | Circuit | Fitting No. | Location | Fault | Quantity
+#  | Action | AED Cost).
 HEADER_ALIASES = {
     "sl_no":        ["sl no", "sl", "s no", "sno", "serial"],
     "date":         ["date", "incident date", "date of incident"],
     "location":     ["location", "area", "site"],
-    "fitting_type": ["fitting type", "type of fitting", "light type"],
+    "fitting_type": ["fitting type", "type of fitting", "light type", "circuit"],
     "fitting_ref":  ["fitting ref", "fitting reference", "fitting id",
                      "asset", "fitting no", "light ref", "fitting"],
+    "fault":        ["fault", "damage", "defect"],
+    "quantity":     ["quantity", "qty"],
+    "action":       ["action", "action taken", "rectification"],
+    "cost":         ["aed cost", "unit cost", "cost"],
     "wo_number":    ["wo number", "workorder no", "work order", "wo", "wo no"],
     "report_id":    ["report id", "incident report no", "report no", "report ref"],
     "report_file":  ["report file", "incident report", "report filename",
@@ -44,6 +52,12 @@ HEADER_ALIASES = {
     "ir_status":    ["ir status", "status", "claim status"],
     "remarks":      ["remarks", "comment", "notes"],
 }
+
+# columns the workflow depends on: appended to an existing workbook's
+# header row when its own layout lacks them (HD's list has no WO /
+# report reference / IR columns - adding them is the tool's purpose).
+ESSENTIAL_FIELDS = [("wo_number", "WO NUMBER"), ("report_id", "REPORT ID"),
+                    ("ir_no", "IR NO"), ("ir_status", "IR STATUS")]
 
 DEFAULT_HEADERS = [
     ("sl_no", "SL NO"), ("date", "DATE"), ("location", "LOCATION"),
@@ -87,25 +101,29 @@ def _write_default_header(ws):
 
 
 def find_data_sheet(wb):
-    """Prefer an existing sheet whose name mentions damage/fitting."""
+    """Prefer an existing sheet whose name mentions damage/fitting; else
+    the sheet whose header row maps the most known columns (HD's real
+    list lives on a plain 'Sheet1'); else create our default sheet."""
     for name in wb.sheetnames:
         n = _norm(name)
-        if "damag" in n or "fitting" in n:
+        if ("damag" in n or "fitting" in n) and not n.startswith(_norm(ANNEX_PREFIX)):
             return wb[name]
-    if DATA_SHEET in wb.sheetnames:
-        return wb[DATA_SHEET]
+    best, best_n = None, 0
+    for name in wb.sheetnames:
+        if name in (QA_SHEET, SUMMARY_SHEET) or name.startswith(ANNEX_PREFIX):
+            continue
+        _, cmap = _scan_headers(wb[name])
+        if len(cmap) > best_n:
+            best, best_n = wb[name], len(cmap)
+    if best is not None and best_n >= 4:
+        return best
     ws = wb.create_sheet(DATA_SHEET, 0)
     _write_default_header(ws)
     return ws
 
 
-def map_headers(ws):
-    """Return (header_row, {field: column}) by fuzzy-matching the header row.
-
-    Scans the first 10 rows for the row matching the most aliases, so it
-    works on HD's real workbook whatever the exact wording is.  Aliases
-    are tried longest-first and each column is claimed once.
-    """
+def _scan_headers(ws):
+    """Find the row matching the most header aliases; no side effects."""
     best_row, best_map = None, {}
     for row in range(1, min(ws.max_row, 10) + 1):
         cells = {col: _norm(ws.cell(row=row, column=col).value)
@@ -123,11 +141,42 @@ def map_headers(ws):
                     break
         if len(cmap) > len(best_map):
             best_row, best_map = row, cmap
+    return best_row, best_map
+
+
+def map_headers(ws):
+    """Return (header_row, {field: column}) by fuzzy-matching the header
+    row - works on HD's real workbook whatever the exact wording is.
+    Aliases are tried longest-first and each column is claimed once.
+    Falls back to writing our default header on an unrecognisable sheet.
+    """
+    best_row, best_map = _scan_headers(ws)
     if not best_map or len(best_map) < 3:
         # no recognisable header: write ours on row 1
         _write_default_header(ws)
         return 1, {f: i + 1 for i, (f, _) in enumerate(DEFAULT_HEADERS)}
     return best_row, best_map
+
+
+def ensure_essential_columns(ws, header_row, cmap):
+    """Append WO / report-reference / IR columns to an existing layout
+    that lacks them, after its last used header column."""
+    last = max([c for c in cmap.values()] +
+               [col for col in range(1, ws.max_column + 1)
+                if ws.cell(row=header_row, column=col).value not in (None, "")] or [0])
+    style_from = ws.cell(row=header_row, column=last) if last else None
+    for field, title in ESSENTIAL_FIELDS:
+        if field in cmap:
+            continue
+        last += 1
+        cell = ws.cell(row=header_row, column=last, value=title)
+        if style_from is not None:
+            cell.font = copy.copy(style_from.font)
+            cell.fill = copy.copy(style_from.fill)
+            cell.alignment = copy.copy(style_from.alignment)
+        ws.column_dimensions[cell.column_letter].width = max(12, len(title) + 4)
+        cmap[field] = last
+    return cmap
 
 
 def _existing_keys(ws, header_row, cmap):
@@ -142,15 +191,23 @@ def _existing_keys(ws, header_row, cmap):
     return keys
 
 
-def upsert_fittings(wb, rec, flags=None):
+def upsert_fittings(wb, rec, flags=None, catalog=None):
     """Add one row per fitting from a parsed record; update in place when
     the (fitting ref, WO) pair is already tracked.  Returns
     (added, updated, warnings)."""
     ws = find_data_sheet(wb)
     header_row, cmap = map_headers(ws)
+    ensure_essential_columns(ws, header_row, cmap)
     keys = _existing_keys(ws, header_row, cmap)
     added = updated = 0
     warnings = []
+    next_sl = 1
+    if "sl_no" in cmap:
+        existing_sl = [ws.cell(row=r, column=cmap["sl_no"]).value
+                       for r in range(header_row + 1, ws.max_row + 1)]
+        numeric = [int(v) for v in existing_sl
+                   if isinstance(v, (int, float)) or (str(v or "").isdigit())]
+        next_sl = (max(numeric) if numeric else 0) + 1
 
     for f in rec.get("fittings", []):
         ref = (f.get("ref") or "").upper()
@@ -163,17 +220,29 @@ def upsert_fittings(wb, rec, flags=None):
                                 % (wo, kref or "?", krow))
         if key in keys:
             row, updated = keys[key], updated + 1
+        elif (ref, "") in keys:
+            # fitting already listed without a WO (e.g. HD's historical
+            # rows before this tool): enrich that row instead of duplicating
+            row, updated = keys.pop((ref, "")), updated + 1
+            keys[key] = row
         else:
             row, added = ws.max_row + 1, added + 1
             keys[key] = row
             if "sl_no" in cmap:
-                ws.cell(row=row, column=cmap["sl_no"],
-                        value=len(keys))
+                ws.cell(row=row, column=cmap["sl_no"], value=next_sl)
+                next_sl += 1
+        ftype = fitting_type(ref)
+        cat = (catalog or {}).get(ftype, {})
+        resolution = (rec.get("resolution") or "").strip().split("\n")[0]
         values = {
             "date": rec.get("incident_date") or rec.get("report_date"),
             "location": rec.get("location"),
-            "fitting_type": fitting_type(ref),
+            "fitting_type": ftype,
             "fitting_ref": ref,
+            "fault": "Damage fitting",
+            "quantity": 1,
+            "action": resolution or "Damage fitting replaced",
+            "cost": cat.get("unit_price"),
             "wo_number": wo,
             "report_id": "%s-%s" % (rec.get("report_id"), rec.get("report_serial"))
                          if rec.get("report_serial") else rec.get("report_id"),
@@ -214,9 +283,11 @@ def _data_rows(ws, header_row, cmap):
     return rows
 
 
-def rebuild_annex_sheets(wb):
+def rebuild_annex_sheets(wb, recent_months=6):
     """Rebuild one 'IR ANNEX <MMM-YYYY>' sheet per month present in the
-    data - the draft annex for the monthly IR raised from HD's tracker."""
+    data - the draft annex for the monthly IR raised from HD's tracker.
+    Only the most recent `recent_months` months get a sheet (0 = all), so
+    a workbook with years of history doesn't grow dozens of annex tabs."""
     ws = find_data_sheet(wb)
     header_row, cmap = map_headers(ws)
     rows = _data_rows(ws, header_row, cmap)
@@ -227,6 +298,11 @@ def rebuild_annex_sheets(wb):
     by_month = {}
     for r in rows:
         by_month.setdefault(_month_key(r["date"]), []).append(r)
+    if recent_months and len(by_month) > recent_months:
+        dated = sorted((m for m in by_month if m != "UNDATED"),
+                       key=lambda m: datetime.datetime.strptime(m, "%b-%Y"))
+        keep = set(dated[-recent_months:]) | ({"UNDATED"} & set(by_month))
+        by_month = {m: v for m, v in by_month.items() if m in keep}
 
     cols = [("SL NO", 8), ("DATE", 12), ("LOCATION", 24), ("FITTING TYPE", 14),
             ("FITTING REF", 18), ("WO NUMBER", 14), ("INCIDENT REPORT REF", 26),

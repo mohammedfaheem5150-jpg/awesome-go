@@ -208,8 +208,9 @@ def main(argv=None):
         return 0
 
     wb = open_tracker(tracker_path)
+    catalog = (cfg.get("ir") or {}).get("catalog") or {}
     for sha, rec, flags in new_records:
-        added, updated, warns = upsert_fittings(wb, rec, flags)
+        added, updated, warns = upsert_fittings(wb, rec, flags, catalog)
         for w in warns:
             log.warning("%s: %s", rec["file"], w)
         ledger[sha] = {
@@ -242,7 +243,7 @@ def main(argv=None):
                                if rd and rd != "None" else None)
         reviews.append((stub, entry.get("flags", [])))
 
-    rebuild_annex_sheets(wb)
+    rebuild_annex_sheets(wb, cfg.get("annex_recent_months", 6))
     rebuild_qa_sheet(wb, reviews)
     rebuild_summary_sheet(wb)
     save_tracker(wb, tracker_path)

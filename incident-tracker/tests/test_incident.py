@@ -62,8 +62,11 @@ def test_bad_report_flags(pdfs):
 
 
 def test_fitting_type():
+    # 3-letter circuit codes, matching HD's 'Circuit' column
     assert fitting_type("TEC102-01/015") == "TEC"
-    assert fitting_type("LICATC-36/024") == "LICATC"
+    assert fitting_type("LICATC-36/024") == "LIC"
+    assert fitting_type("TCCATC-34/081") == "TCC"
+    assert fitting_type("SBC13L-33/016") == "SBC"
 
 
 def test_tracker_upsert_and_rebuild(pdfs, tmp_path):
@@ -106,33 +109,54 @@ def test_duplicate_wo_warning(pdfs, tmp_path):
     assert warns and "already tracked" in warns[0]
 
 
-def test_header_automap_hd_style(pdfs, tmp_path):
-    """The writer must adapt to HD's own workbook layout, not impose ours."""
+def test_header_automap_hd_real_layout(pdfs, tmp_path):
+    """The writer must adapt to HD's real workbook: plain 'Sheet1', title
+    on row 1, header on row 2, Circuit/Fault/Quantity/Action/AED Cost
+    columns, and NO WO / report / IR columns (they get appended)."""
+    import datetime
     path = str(tmp_path / "hd.xlsx")
     wb = Workbook()
     ws = wb.active
-    ws.title = "Damaged Fittings 2026"
-    ws.append(["S.No", "Date", "Area", "Fitting ID", "Work Order",
-               "Incident Report No", "Status", "Remarks"])
-    ws.append([1, "01-Jan-26", "Twy Z", "TEC999-01/001", "43800000",
-               "20260101-01", "IR RAISED", ""])
+    ws.title = "Sheet1"  # the real file's sheet name - nothing to match on
+    ws.append(["LIST OF DAMAGED FITTINGS (DAMAGED BY UNKNOWN COMPANY)"])
+    ws.append(["SL NO.", "Date", "Circuit", "Fitting No.", "Location",
+               "Fault", "Quantity", "Action", " AED Cost"])
+    ws.append([1, datetime.datetime(2024, 7, 4), "TCC", "TCCATC-34/081", "L1",
+               "Damage fitting", 1, "Damage fitting replaced ", 1552])
     wb.save(path)
 
     wb = open_tracker(path)
     ws = find_data_sheet(wb)
-    assert ws.title == "Damaged Fittings 2026"
+    assert ws.title == "Sheet1"
     header_row, cmap = map_headers(ws)
-    assert header_row == 1
-    assert cmap["fitting_ref"] is not None
-    assert cmap["wo_number"] is not None
+    assert header_row == 2
+    assert cmap["fitting_type"] == 3   # Circuit
+    assert cmap["fitting_ref"] == 4    # Fitting No.
+    assert cmap["cost"] == 9           # AED Cost
+    assert "wo_number" not in cmap
 
     rec = parse_incident_pdf(pdfs[0])
-    added, _, _ = upsert_fittings(wb, rec)
+    catalog = {"TEC": {"unit_price": 1392.46}}
+    added, _, _ = upsert_fittings(wb, rec, catalog=catalog)
     assert added == 1
-    row = [c.value for c in ws[3]]
-    assert "TEC102-05/001" in row and "43900001" in [str(v) for v in row]
-    # existing row untouched
-    assert ws.cell(row=2, column=4).value == "TEC999-01/001"
+    # essential columns appended after AED Cost
+    header_row, cmap = map_headers(ws)
+    assert cmap["wo_number"] == 10 and cmap["report_id"] == 11
+    assert ws.cell(row=header_row, column=10).value == "WO NUMBER"
+    new = {ws.cell(row=2, column=c).value: ws.cell(row=4, column=c).value
+           for c in range(1, 12)}
+    row4 = [ws.cell(row=4, column=c).value for c in range(1, 12)]
+    assert "TEC102-05/001" in row4 and "TEC" in row4
+    assert ws.cell(row=4, column=9).value == 1392.46       # cost from catalog
+    assert ws.cell(row=4, column=10).value == "43900001"   # WO in new column
+    assert ws.cell(row=4, column=1).value == 2             # SL NO continues
+    # existing HD row untouched
+    assert ws.cell(row=3, column=4).value == "TCCATC-34/081"
+    assert ws.cell(row=3, column=9).value == 1552
+
+    # re-upsert: updates in place, still no duplicate
+    added, updated, _ = upsert_fittings(wb, rec, catalog=catalog)
+    assert added == 0 and updated == 1
 
 
 def test_run_incident_end_to_end(pdfs, tmp_path, monkeypatch):

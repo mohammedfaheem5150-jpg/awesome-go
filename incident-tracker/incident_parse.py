@@ -461,6 +461,8 @@ def review_record(rec, review_cfg=None):
 
 
 def fitting_type(ref):
-    """Leading letters of the asset ref: TEC102-01/015 -> TEC, LICATC-36/024 -> LICATC."""
+    """Circuit code of the asset ref - the first three leading letters,
+    matching HD's 'Circuit' column: TEC102-01/015 -> TEC,
+    LICATC-36/024 -> LIC, TCCATC-34/081 -> TCC, SBC13L-33/016 -> SBC."""
     m = re.match(r"([A-Z]+)", ref or "")
-    return m.group(1) if m else ""
+    return m.group(1)[:3] if m else ""
