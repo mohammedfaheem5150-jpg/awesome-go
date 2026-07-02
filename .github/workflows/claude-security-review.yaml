@@ -1,0 +1,33 @@
+name: Claude Security Review
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened]
+
+permissions:
+  contents: read
+
+jobs:
+  security-review:
+    name: Claude security review
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: write
+      issues: write
+      id-token: write
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+          fetch-depth: 0
+
+      - name: Run Claude security review
+        uses: anthropics/claude-code-action@beta
+        with:
+          mode: "tag"
+          direct_prompt: "Review this PR for security issues"
+          anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
+          custom_instructions: "Follow our coding standards"
+          max_turns: "10"
+          model: "claude-sonnet-5"
