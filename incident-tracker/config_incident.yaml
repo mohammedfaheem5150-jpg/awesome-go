@@ -26,3 +26,31 @@ incident:
     max_report_date_drift_days: 1
     stand_series: [100, 800]              # AUH stand numbering
     expected_prepared_by: ""              # e.g. your name; blank = don't check
+
+  # Monthly IR draft (ir_draft.py) - the ADB SAFEGATE AGL SPARE PARTS
+  # REQUISITION document raised from the damaged-fitting tracker.
+  ir:
+    requisition_type: Internal Purchase
+    requested_by: ""                      # names typed on the final document
+    acknowledged_by: ""
+    approved_by: ""
+    currency: AED
+    justification:
+      - >-
+        The light fixture was damaged due to unknown vehicle movement. These
+        fixtures must be taken and utilized from ADA store. Cost will be under
+        ADA-AGL as the assets are damaged due to the unknown vehicle hit.
+      - Incident reports for this IR has been attached.
+    # Fitting-type prefix -> requisition line. Fill from your parts list;
+    # types without an entry still get a row with <FILL> placeholders.
+    catalog: {}
+    #  TEC:
+    #    erp_no: "10103204"
+    #    description: "FIXTURE, LIGHTING; TYP:OMNIDIRECTIONAL, EDGE LIGHT, ..."
+    #    unit_price: 1392.46
+    #    remarks: "available at ADA Warehouse"
+    #  LICATC:
+    #    erp_no: "..."
+    #    description: "..."
+    #    unit_price: 0.0
+    #    remarks: ""

@@ -157,3 +157,38 @@ def test_run_incident_end_to_end(pdfs, tmp_path, monkeypatch):
     data = wb[wb.sheetnames[0]]
     n_rows2 = sum(1 for r in data.iter_rows(min_row=2, values_only=True) if r[4])
     assert n_rows2 == n_rows
+
+
+def test_ir_draft(pdfs, tmp_path, monkeypatch):
+    """Draft the monthly IR docx from the tracker and read it back."""
+    import shutil
+    import run_incident
+    import ir_draft
+    from docx import Document
+
+    workdir = tmp_path / "suite"
+    (workdir / "incident_inbox").mkdir(parents=True)
+    for p in pdfs:
+        shutil.copy(p, workdir / "incident_inbox" / os.path.basename(p))
+    monkeypatch.setattr(run_incident, "HERE", str(workdir))
+    monkeypatch.setattr(ir_draft, "HERE", str(workdir))
+    assert run_incident.main(["--manual"]) == 0
+
+    out = str(workdir / "draft.docx")
+    catalog = {"TEC": {"erp_no": "10103204", "description": "FIXTURE, LIGHTING",
+                       "unit_price": 1392.46, "remarks": "ADA Warehouse"}}
+    monkeypatch.setattr(ir_draft, "load_config",
+                        lambda _=None: dict(run_incident.DEFAULTS,
+                                            ir={"catalog": catalog}))
+    assert ir_draft.main(["2026-01", "--ir-no", "55", "--out", out]) == 0
+
+    doc = Document(out)
+    items = doc.tables[0]
+    assert len(items.rows) == 2  # header + one TEC line (3 fittings in Jan)
+    row = [c.text for c in items.rows[1].cells]
+    assert row[1] == "10103204" and row[3] == "3"
+    assert "4,177.38" in row[5]
+    annex = doc.tables[1]
+    refs = [r.cells[3].text for r in annex.rows[1:]]
+    assert refs == ["TEC102-05/001", "TEC102-07/010", "TEC102-07/011"]
+    assert any("Requisition No: ADB-IR 55" in p.text for p in doc.paragraphs)
