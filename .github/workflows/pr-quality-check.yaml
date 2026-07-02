@@ -98,10 +98,12 @@ jobs:
 
       - name: Sync labels
         if: needs.quality.outputs.labels != ''
-        uses: actions-ecosystem/action-add-labels@18f1af5e3544586314bbe15c0273249c770b2daf # v1
-        with:
-          github_token: ${{ secrets.GITHUB_TOKEN }}
-          labels: ${{ join(fromJson(needs.quality.outputs.labels), '\n') }}
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          LABELS_JSON: ${{ needs.quality.outputs.labels }}
+        run: |
+          gh api "repos/${{ github.repository }}/issues/${{ github.event.pull_request.number }}/labels" \
+            --method POST --input - <<< "{\"labels\": ${LABELS_JSON}}"
 
       - name: Fail if critical checks failed
         if: needs.quality.outputs.fail == 'true' || needs.quality.outputs.diff_fail == 'true'
