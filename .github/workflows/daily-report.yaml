@@ -14,7 +14,7 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       contents: read
-      issues: read
+      issues: write
       pull-requests: read
       id-token: write
       actions: read
@@ -28,5 +28,5 @@ jobs:
         uses: anthropics/claude-code-action@v1
         with:
           anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
-          prompt: "Generate a summary of yesterday's commits and open issues"
+          prompt: "Generate a summary of yesterday's commits and open issues, then post it as a new GitHub issue titled 'Daily report: <today's date>' using `gh issue create`"
           claude_args: "--model opus"
